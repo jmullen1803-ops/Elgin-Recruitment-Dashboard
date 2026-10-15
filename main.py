@@ -2,24 +2,43 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 from pathlib import Path
+import time
 
 # --------------------------------------------------
 # PASSWORD PROTECTION
 # --------------------------------------------------
 
 def check_password():
-    """Require a password before showing the dashboard."""
+    """Require a password and keep the session active for 8 hours."""
 
-    if st.session_state.get("authenticated", False):
+    session_start = st.session_state.get("authenticated_at")
+    current_time = time.time()
+    session_duration = 8 * 60 * 60
+
+    # Allow access if the login is still within 8 hours
+    if (
+        session_start is not None
+        and current_time - session_start < session_duration
+    ):
         return True
+
+    # Clear expired login
+    st.session_state.pop("authenticated_at", None)
 
     st.title("Elgin City FC")
     st.subheader("Scouting Dashboard")
-    password = st.text_input("Enter password", type="password")
 
-    if st.button("Log in"):
+    # A form allows Enter to submit the password
+    with st.form("login_form"):
+        password = st.text_input(
+            "Enter password",
+            type="password"
+        )
+        submitted = st.form_submit_button("Log in")
+
+    if submitted:
         if password == st.secrets["app_password"]:
-            st.session_state["authenticated"] = True
+            st.session_state["authenticated_at"] = time.time()
             st.rerun()
         else:
             st.error("Incorrect password")
@@ -29,6 +48,7 @@ def check_password():
 
 if not check_password():
     st.stop()
+
 
 # --------------------------------------------------
 # PAGE CONFIGURATION
