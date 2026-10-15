@@ -21,9 +21,12 @@ COOKIE_NAME = "elgin_auth"
 # Change to True when deployed on HTTPS.
 COOKIE_SECURE = False
 
-cookie_manager = stx.CookieManager(
-    key="elgin_auth_cookie_manager"
-)
+if "cookie_manager" not in st.session_state:
+    st.session_state["cookie_manager"] = stx.CookieManager(
+        key="elgin_auth_cookie_manager"
+    )
+
+cookie_manager = st.session_state["cookie_manager"]
 
 
 def create_auth_token():
@@ -68,9 +71,15 @@ def valid_auth_token(token):
 
 
 def check_password():
-    token = cookie_manager.get(COOKIE_NAME)
+    # Keep a successful login for the current Streamlit session
+    if st.session_state.get("logged_in", False):
+        return True
+
+    cookies = cookie_manager.get_all(key="read_auth_cookies")
+    token = cookies.get(COOKIE_NAME) if cookies else None
 
     if valid_auth_token(token):
+        st.session_state["logged_in"] = True
         return True
 
     st.title("Elgin City FC")
@@ -88,6 +97,8 @@ def check_password():
             password,
             st.secrets["app_password"]
         ):
+            st.session_state["logged_in"] = True
+
             cookie_manager.set(
                 COOKIE_NAME,
                 create_auth_token(),
@@ -98,7 +109,6 @@ def check_password():
                 same_site="lax"
             )
 
-            st.session_state["authenticated_at"] = time.time()
             return True
 
         st.error("Incorrect password")
@@ -108,8 +118,6 @@ def check_password():
 
 if not check_password():
     st.stop()
-
-
 
 # --------------------------------------------------
 # PAGE CONFIGURATION
