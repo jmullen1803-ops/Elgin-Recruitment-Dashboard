@@ -3,32 +3,79 @@ import streamlit as st
 import streamlit.components.v1 as components
 from pathlib import Path
 import time
+import hashlib
+import hmac
+import extra_streamlit_components as stx
+
+
+
 
 # --------------------------------------------------
-# PASSWORD PROTECTION
+# PASSWORD PROTECTION — 8-HOUR COOKIE SESSION
 # --------------------------------------------------
+
+SESSION_DURATION = 8 * 60 * 60
+COOKIE_NAME = "elgin_auth"
+
+# Local development uses HTTP.
+# Change to True when deployed on HTTPS.
+COOKIE_SECURE = False
+
+cookie_manager = stx.CookieManager(
+    key="elgin_auth_cookie_manager"
+)
+
+
+def create_auth_token():
+    expiry = int(time.time()) + SESSION_DURATION
+    signing_key = st.secrets["cookie_signing_key"]
+
+    signature = hmac.new(
+        signing_key.encode("utf-8"),
+        str(expiry).encode("utf-8"),
+        digestmod="sha256"
+    ).hexdigest()
+
+    return f"{expiry}.{signature}"
+
+
+def valid_auth_token(token):
+    if not isinstance(token, str):
+        return False
+
+    try:
+        expiry_text, supplied_signature = token.split(".", 1)
+        expiry = int(expiry_text)
+
+        if expiry <= time.time():
+            return False
+
+        signing_key = st.secrets["cookie_signing_key"]
+
+        expected_signature = hmac.new(
+            signing_key.encode("utf-8"),
+            expiry_text.encode("utf-8"),
+            digestmod="sha256"
+        ).hexdigest()
+
+        return hmac.compare_digest(
+            supplied_signature,
+            expected_signature
+        )
+
+    except (ValueError, TypeError):
+        return False
+
 
 def check_password():
-    """Require a password and keep the session active for 8 hours."""
+    token = cookie_manager.get(COOKIE_NAME)
 
-    session_start = st.session_state.get("authenticated_at")
-    current_time = time.time()
-    session_duration = 8 * 60 * 60
-
-    # Allow access if the login is still within 8 hours
-    if (
-        session_start is not None
-        and current_time - session_start < session_duration
-    ):
+    if valid_auth_token(token):
         return True
-
-    # Clear expired login
-    st.session_state.pop("authenticated_at", None)
 
     st.title("Elgin City FC")
     st.subheader("Scouting Dashboard")
 
-    # A form allows Enter to submit the password
     with st.form("login_form"):
         password = st.text_input(
             "Enter password",
@@ -37,17 +84,31 @@ def check_password():
         submitted = st.form_submit_button("Log in")
 
     if submitted:
-        if password == st.secrets["app_password"]:
+        if hmac.compare_digest(
+            password,
+            st.secrets["app_password"]
+        ):
+            cookie_manager.set(
+                COOKIE_NAME,
+                create_auth_token(),
+                key="set_auth_cookie",
+                path="/",
+                max_age=SESSION_DURATION,
+                secure=COOKIE_SECURE,
+                same_site="lax"
+            )
+
             st.session_state["authenticated_at"] = time.time()
-            st.rerun()
-        else:
-            st.error("Incorrect password")
+            return True
+
+        st.error("Incorrect password")
 
     return False
 
 
 if not check_password():
     st.stop()
+
 
 
 # --------------------------------------------------
